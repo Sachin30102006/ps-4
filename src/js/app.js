@@ -22,18 +22,32 @@ const rightPanel = document.getElementById('rightPanel');
 const navItems = document.querySelectorAll('.nav-item[data-page]');
 const sidebar = document.getElementById('sidebar');
 
-function navigate(page) {
+async function navigate(page) {
     const cfg = PAGES[page];
     if (!cfg) return navigate('dashboard');
 
-    content.innerHTML = cfg.render();
-    cfg.init();
+    // Handle async render
+    const rendered = cfg.render();
+    if (rendered instanceof Promise) {
+        content.innerHTML = await rendered;
+    } else {
+        content.innerHTML = rendered;
+    }
+
+    // Init if exists
+    if (cfg.init) cfg.init();
 
     // Right panel
     if (rightPanel) {
         if (cfg.panel) {
             rightPanel.style.display = '';
-            rightPanel.innerHTML = cfg.panel();
+            // Handle async panel if needed (though usually sync for now)
+            const panelRendered = cfg.panel();
+            if (panelRendered instanceof Promise) {
+                rightPanel.innerHTML = await panelRendered;
+            } else {
+                rightPanel.innerHTML = panelRendered;
+            }
         } else {
             rightPanel.style.display = 'none';
         }

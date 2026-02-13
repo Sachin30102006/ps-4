@@ -22,44 +22,64 @@ const rightPanel = document.getElementById('rightPanel');
 const navItems = document.querySelectorAll('.nav-item[data-page]');
 const sidebar = document.getElementById('sidebar');
 
+console.log('App.js initialized');
+console.log('Elements found:', { content, rightPanel, sidebar });
+
 async function navigate(page) {
-    const cfg = PAGES[page];
-    if (!cfg) return navigate('dashboard');
+    try {
+        const cfg = PAGES[page];
+        if (!cfg) return navigate('dashboard');
 
-    // Handle async render
-    const rendered = cfg.render();
-    if (rendered instanceof Promise) {
-        content.innerHTML = await rendered;
-    } else {
-        content.innerHTML = rendered;
-    }
-
-    // Init if exists
-    if (cfg.init) cfg.init();
-
-    // Right panel
-    if (rightPanel) {
-        if (cfg.panel) {
-            rightPanel.style.display = '';
-            // Handle async panel if needed (though usually sync for now)
-            const panelRendered = cfg.panel();
-            if (panelRendered instanceof Promise) {
-                rightPanel.innerHTML = await panelRendered;
-            } else {
-                rightPanel.innerHTML = panelRendered;
-            }
+        // Handle async render
+        const rendered = cfg.render();
+        if (rendered instanceof Promise) {
+            content.innerHTML = await rendered;
         } else {
-            rightPanel.style.display = 'none';
+            content.innerHTML = rendered;
         }
+
+        // Init if exists
+        try {
+            if (cfg.init) cfg.init();
+        } catch (initErr) {
+            console.error("Init error", initErr);
+        }
+
+        // Right panel
+        if (rightPanel) {
+            if (cfg.panel) {
+                rightPanel.style.display = '';
+                // Handle async panel
+                const panelRendered = cfg.panel();
+                if (panelRendered instanceof Promise) {
+                    rightPanel.innerHTML = await panelRendered;
+                } else {
+                    rightPanel.innerHTML = panelRendered;
+                }
+            } else {
+                rightPanel.style.display = 'none';
+            }
+        }
+
+        // Active nav
+        navItems.forEach((item) => {
+            item.classList.toggle('active', item.dataset.page === page);
+        });
+
+        sidebar.classList.remove('open');
+        content.scrollTop = 0;
+
+    } catch (e) {
+        console.error("Navigation Error", e);
+        content.innerHTML = `
+            <div style="padding: 20px; color: #ff6b6b; font-family: monospace; background: rgba(50,0,0,0.5); border-radius: 8px;">
+                <h3>⚠️ Application Error</h3>
+                <p>Failed to load page: <strong>${page}</strong></p>
+                <p>${e.message}</p>
+                <pre>${e.stack}</pre>
+            </div>
+        `;
     }
-
-    // Active nav
-    navItems.forEach((item) => {
-        item.classList.toggle('active', item.dataset.page === page);
-    });
-
-    sidebar.classList.remove('open');
-    content.scrollTop = 0;
 }
 
 function getPageFromHash() {

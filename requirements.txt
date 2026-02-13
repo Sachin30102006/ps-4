@@ -1,4 +1,5 @@
-flask>=3.0
+fastapi
+uvicorn[standard]
 pandas
 scikit-learn
 joblib

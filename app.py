@@ -1,36 +1,78 @@
-"""
-CredLens — AI Reputation Intelligence for Small Businesses
-Flask Application
-"""
-from flask import Flask, render_template, jsonify, request
+
+import sqlite3
+import subprocess
+from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from typing import Optional, List
+import os
+
 from risk_engine import RiskEngine
 from db_utils import get_db_connection
 
-app = Flask(__name__)
+app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 # Initialize Risk Engine
 risk_engine = RiskEngine()
 
-# ── Pages ──────────────────────────────────────────────────
-@app.route("/")
-def index():
-    """Serve the main SPA shell."""
-    return render_template("index.html")
+# Input Models
+class BusinessMetrics(BaseModel):
+    revenue: float
+    transactions: int
+    paymentDelay: float
+    activityFreq: int
+    reviewText: Optional[str] = None
+    # Optional fields for direct DB insertion if different from analysis input
+    risk_label: Optional[int] = None
 
+class BusinessRecord(BaseModel):
+    id: int
+    monthly_revenue: float
+    payment_delays: float
+    transactions: int
+    avg_sentiment: float
+    risk_label: Optional[int]
+    created_at: str
 
-# ── API ──────────────────────────────────────────────────
-@app.route("/api/analyze", methods=["POST"])
-def analyze():
-    """
-    Accept business metrics and return a computed reputation score
-    and risk profile using the Risk Engine (ML + Deterministic).
-    """
-    data = request.get_json(silent=True) or {}
+# Background Task
+def train_model_task():
+    print("Background Task: Starting model retraining...", flush=True)
+    try:
+        # Run train_model.py as a subprocess to ensure clean state
+        result = subprocess.run(["python", "train_model.py"], capture_output=True, text=True)
+        if result.returncode == 0:
+            print("Background Task: Model trained successfully.", flush=True)
+            print(result.stdout, flush=True)
+            # Reload the risk engine to pick up the new model
+            global risk_engine
+            risk_engine = RiskEngine() 
+        else:
+            print(f"Background Task: Model training failed. Stderr: {result.stderr}", flush=True)
+    except Exception as e:
+        print(f"Background Task Error: {e}", flush=True)
+
+# API Endpoints
+
+@app.get("/api/businesses", response_model=List[dict])
+async def get_businesses():
+    conn = get_db_connection()
+    businesses = conn.execute('SELECT * FROM businesses').fetchall()
+    conn.close()
+    return [dict(ix) for ix in businesses]
+
+@app.post("/api/analyze")
+async def analyze(data: BusinessMetrics, background_tasks: BackgroundTasks):
+    # 1. Analyze
+    # Convert Pydantic model to dict
+    input_data = data.dict()
+    result = risk_engine.analyze(input_data)
     
-    # Use Risk Engine to analyze data
-    result = risk_engine.analyze(data)
-    
-    # Save to database
+    # 2. Persist to DB
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -38,74 +80,77 @@ def analyze():
             INSERT INTO businesses (monthly_revenue, payment_delays, transactions, avg_sentiment, risk_label)
             VALUES (?, ?, ?, ?, ?)
         ''', (
-            data.get('revenue'),
-            data.get('paymentDelay'),
-            data.get('transactions'),
-            0.0, # Sentiment not passed from frontend yet, default to 0
-            1 if result['risk'] == 'High' else 0 # Simple mapping or use result['ml_risk_probability']
+            data.revenue,
+            data.paymentDelay,
+            data.transactions,
+            0.0, # Placeholder for sentiment until NLP is connected
+            1 if result['risk'] == 'High' else 0
         ))
         conn.commit()
         conn.close()
-        print(f"SUCCESS: Analysis for revenue ${data.get('revenue')} saved to database.", flush=True)
-    except Exception as e:
-        print(f"Error saving analysis to DB: {e}", flush=True)
-    
-    return jsonify(result)
-
-@app.route("/api/businesses", methods=["GET"])
-def get_businesses():
-    """
-    Retrieve all business records from the database.
-    """
-    conn = get_db_connection()
-    businesses = conn.execute('SELECT * FROM businesses').fetchall()
-    conn.close()
-    return jsonify([dict(ix) for ix in businesses])
-
-@app.route("/api/business", methods=["POST"])
-def add_business_route():
-    """
-    Add a new business record to the database and retrain the model (optional).
-    """
-    data = request.get_json(silent=True) or {}
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO businesses (monthly_revenue, payment_delays, transactions, avg_sentiment, risk_label)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (
-        data.get('revenue'),
-        data.get('paymentDelay'),
-        data.get('transactions'),
-        data.get('sentiment'),
-        data.get('risk_label') # Optional 0 or 1
-    ))
-    conn.commit()
-    conn.close()
-    
-    return jsonify({"message": "Business added successfully"}), 201
-
-@app.route("/api/retrain", methods=["POST"])
-def retrain_model():
-    """
-    Trigger the model training script.
-    """
-    import subprocess
-    try:
-        # Run train_model.py
-        result = subprocess.run(["python", "train_model.py"], capture_output=True, text=True)
+        print(f"SUCCESS: Analysis saved to DB.", flush=True)
         
-        if result.returncode == 0:
-            # Reload the risk engine with the new model
-            global risk_engine
-            risk_engine = RiskEngine()
-            return jsonify({"message": "Model retrained successfully", "output": result.stdout}), 200
-        else:
-            return jsonify({"message": "Model training failed", "error": result.stderr}), 500
+        # 3. Trigger Auto-Retrain
+        background_tasks.add_task(train_model_task)
+        
     except Exception as e:
-        return jsonify({"message": "Error triggering training", "error": str(e)}), 500
+        print(f"Error saving/training: {e}", flush=True)
 
+    return result
+
+@app.post("/api/business")
+async def add_business(data: BusinessMetrics, background_tasks: BackgroundTasks):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO businesses (monthly_revenue, payment_delays, transactions, avg_sentiment, risk_label)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (
+            data.revenue,
+            data.paymentDelay,
+            data.transactions,
+            0.0,
+            data.risk_label if data.risk_label is not None else 0
+        ))
+        conn.commit()
+        conn.close()
+        
+        # Trigger Auto-Retrain
+        background_tasks.add_task(train_model_task)
+        
+        return {"message": "Business added and training triggered"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/retrain")
+async def retrain(background_tasks: BackgroundTasks):
+    background_tasks.add_task(train_model_task)
+    return {"message": "Model retraining started in background"}
+
+# Serve Static Files (Frontend)
+# Mount the 'src' directory to separate paths if needed, or serve index.html at root
+app.mount("/styles", StaticFiles(directory="src/styles"), name="styles")
+app.mount("/js", StaticFiles(directory="src/js"), name="js")
+if os.path.exists("src/assets"):
+    app.mount("/assets", StaticFiles(directory="src/assets"), name="assets")
+
+# Mount Chart.js locally to avoid CDN issues
+if os.path.exists("node_modules/chart.js/dist"):
+    app.mount("/vendor/chart.js", StaticFiles(directory="node_modules/chart.js/dist"), name="chartjs")
+    # Also mount dependencies (e.g. @kurkle/color)
+    if os.path.exists("node_modules/@kurkle/color/dist"):
+        app.mount("/vendor/kurkle", StaticFiles(directory="node_modules/@kurkle/color/dist"), name="kurkle")
+
+elif os.path.exists("../node_modules/chart.js/dist"): # Fallback if run from src
+    app.mount("/vendor/chart.js", StaticFiles(directory="../node_modules/chart.js/dist"), name="chartjs")
+else:
+    print("WARNING: Chart.js not found locally.", flush=True)
+
+@app.get("/")
+async def read_index():
+    return FileResponse('src/index.html')
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8002)

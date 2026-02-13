@@ -92,15 +92,44 @@
         <!-- Center Content -->
         <div class="content-area" id="content">
             <!-- Pages rendered here -->
+            <div style="padding: 50px; text-align: center; color: white;">
+                <h2>Loading App...</h2>
+                <p>If this message doesn't disappear, check the console (Esc) or see errors below.</p>
+            </div>
         </div>
 
-        <!-- Right Panel -->
-        <div class="right-panel" id="rightPanel">
-            <!-- Right panel rendered by JS -->
-        </div>
-    </div>
+        <script type="importmap">
+        {
+            "imports": {
+                "chart.js": "/vendor/chart.js/chart.js",
+                "@kurkle/color": "/vendor/kurkle/color.esm.js"
+            }
+        }
+        </script>
 
-    <script type="module" src="/js/app.js?v=3"></script>
+        <script>
+            console.log('Index HTML loaded. Attempting to import app.js...');
+            window.onerror = function (msg, url, line, col, error) {
+                const errDiv = document.getElementById('error-display') || document.createElement('div');
+                errDiv.id = 'error-display';
+                errDiv.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);color:#ff5555;padding:20px;z-index:9999;font-family:monospace;overflow:auto;';
+                errDiv.innerHTML += `<h3>Global Error</h3><p><strong>${msg}</strong></p><p>${url}:${line}:${col}</p><pre>${error ? error.stack : ''}</pre>`;
+                document.body.appendChild(errDiv);
+                return false;
+            };
+
+            // Dynamic import to catch module loading errors
+            import('/js/app.js?v=9')
+                .then(module => {
+                    console.log('App module loaded via dynamic import', module);
+                })
+                .catch(err => {
+                    console.error('Failed to load app.js:', err);
+                    window.onerror('Module Load Failed: ' + err.message, '/js/app.js', 0, 0, err);
+                });
+        </script>
+        <!-- Fallback script tag just in case -->
+        <!-- <script type="module" src="/js/app.js?v=9"></script> -->
 </body>
 
 </html>

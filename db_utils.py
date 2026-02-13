@@ -4,7 +4,8 @@ import sqlite3
 DB_NAME = 'reputation.db'
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_NAME)
+    # print(f"Connecting to {DB_NAME}...", flush=True)
+    conn = sqlite3.connect(DB_NAME, timeout=10) # Increased timeout
     conn.row_factory = sqlite3.Row
     return conn
 

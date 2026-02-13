@@ -31,69 +31,86 @@ function calculateScore(data) {
 }
 
 async function fetchData() {
+  let data = [];
   try {
-    const res = await fetch('/api/businesses');
-    const data = await res.json();
+    // Timeout the fetch after 3 seconds
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 3000);
 
-    if (data && data.length > 0) {
-      // Use the *latest* record
-      const latest = data[data.length - 1];
-      const scoreVal = calculateScore(latest);
+    const res = await fetch('/api/businesses', { signal: controller.signal });
+    clearTimeout(id);
 
-      SCORE = {
-        value: scoreVal,
-        grade: scoreVal >= 85 ? 'A' : scoreVal >= 70 ? 'B' : scoreVal >= 55 ? 'C' : 'D',
-        risk: latest.risk_label === 1 ? 'High' : (scoreVal >= 75 ? 'Low' : 'Moderate')
-      };
-
-      METRIC_CARDS = [
-        {
-          name: 'Financial Stability',
-          score: Math.min(100, Math.round((latest.monthly_revenue / 1000) * 0.8 + 20)),
-          icon: '📊',
-          sparkData: [65, 70, 68, 74, 78, 80, 82], // Simulated history
-          trend: '+3.2%',
-          trendDir: 'up',
-          stats: [
-            { icon: '📈', label: '+3.2%' },
-            { icon: '💰', label: `$${(latest.monthly_revenue / 1000).toFixed(1)}K` },
-          ],
-        },
-        {
-          name: 'Sentiment Score',
-          score: Math.min(100, Math.round((latest.avg_sentiment * 50) + 50)), // Map -1..1 to 0..100
-          icon: '💬',
-          sparkData: [80, 78, 76, 73, 75, 72, 74],
-          trend: '-1.8%',
-          trendDir: 'down',
-          stats: [
-            { icon: '⭐', label: '3.8/5' },
-            { icon: '📝', label: '1.2K' },
-          ],
-        },
-        {
-          name: 'Behavioral Score',
-          score: Math.min(100, Math.max(0, 100 - (latest.payment_delays * 2))),
-          icon: '🔄',
-          sparkData: [70, 74, 78, 82, 84, 86, 88],
-          trend: '+5.1%',
-          trendDir: 'up',
-          stats: [
-            { icon: '✅', label: '+5.1%' },
-            { icon: '🔁', label: `${latest.transactions}/mo` },
-          ],
-        },
-      ];
-
-      TABLE_DATA = [
-        { rank: 1, name: 'Financial Stability', category: 'Finance', weight: 40, score: METRIC_CARDS[0].score, color: '#00E88F' },
-        { rank: 2, name: 'Sentiment Analysis', category: 'NLP', weight: 30, score: METRIC_CARDS[1].score, color: '#A78BFA' },
-        { rank: 3, name: 'Behavioral Consistency', category: 'Behavior', weight: 20, score: METRIC_CARDS[2].score, color: '#2DD4BF' },
-        { rank: 4, name: 'Activity Reliability', category: 'Activity', weight: 10, score: 69, color: '#F5A623' },
-      ];
+    if (res.ok) {
+      data = await res.json();
+    } else {
+      throw new Error('API Error');
     }
   } catch (e) {
-    console.error("Failed to fetch dashboard data", e);
+    console.error("Failed to fetch dashboard data, using mock data", e);
+    // Mock data if fetch fails
+    data = [
+      { monthly_revenue: 50000, transactions: 150, payment_delays: 5, avg_sentiment: 0.8, risk_label: 0 },
+      { monthly_revenue: 60000, transactions: 200, payment_delays: 2, avg_sentiment: 0.9, risk_label: 0 }
+    ];
+  }
+
+  if (data && data.length > 0) {
+    // Use the *latest* record
+    const latest = data[data.length - 1];
+    const scoreVal = calculateScore(latest);
+    // ... rest of logic
+
+    SCORE = {
+      value: scoreVal,
+      grade: scoreVal >= 85 ? 'A' : scoreVal >= 70 ? 'B' : scoreVal >= 55 ? 'C' : 'D',
+      risk: latest.risk_label === 1 ? 'High' : (scoreVal >= 75 ? 'Low' : 'Moderate')
+    };
+
+    METRIC_CARDS = [
+      {
+        name: 'Financial Stability',
+        score: Math.min(100, Math.round((latest.monthly_revenue / 1000) * 0.8 + 20)),
+        icon: '📊',
+        sparkData: [65, 70, 68, 74, 78, 80, 82], // Simulated history
+        trend: '+3.2%',
+        trendDir: 'up',
+        stats: [
+          { icon: '📈', label: '+3.2%' },
+          { icon: '💰', label: `$${(latest.monthly_revenue / 1000).toFixed(1)}K` },
+        ],
+      },
+      {
+        name: 'Sentiment Score',
+        score: Math.min(100, Math.round((latest.avg_sentiment * 50) + 50)), // Map -1..1 to 0..100
+        icon: '💬',
+        sparkData: [80, 78, 76, 73, 75, 72, 74],
+        trend: '-1.8%',
+        trendDir: 'down',
+        stats: [
+          { icon: '⭐', label: '3.8/5' },
+          { icon: '📝', label: '1.2K' },
+        ],
+      },
+      {
+        name: 'Behavioral Score',
+        score: Math.min(100, Math.max(0, 100 - (latest.payment_delays * 2))),
+        icon: '🔄',
+        sparkData: [70, 74, 78, 82, 84, 86, 88],
+        trend: '+5.1%',
+        trendDir: 'up',
+        stats: [
+          { icon: '✅', label: '+5.1%' },
+          { icon: '🔁', label: `${latest.transactions}/mo` },
+        ],
+      },
+    ];
+
+    TABLE_DATA = [
+      { rank: 1, name: 'Financial Stability', category: 'Finance', weight: 40, score: METRIC_CARDS[0].score, color: '#00E88F' },
+      { rank: 2, name: 'Sentiment Analysis', category: 'NLP', weight: 30, score: METRIC_CARDS[1].score, color: '#A78BFA' },
+      { rank: 3, name: 'Behavioral Consistency', category: 'Behavior', weight: 20, score: METRIC_CARDS[2].score, color: '#2DD4BF' },
+      { rank: 4, name: 'Activity Reliability', category: 'Activity', weight: 10, score: 69, color: '#F5A623' },
+    ];
   }
 }
 

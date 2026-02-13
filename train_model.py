@@ -8,11 +8,14 @@ from sklearn.metrics import accuracy_score, classification_report
 import joblib
 print("Imported all modules", flush=True)
 
+import sqlite3
+
 # 1. Load Data
-# Assuming the CSV is in the same directory or accessible
-print("Reading CSV...", flush=True)
-df = pd.read_csv('business_reputation_dataset.csv')
-print(f"Read CSV with shape {df.shape}", flush=True)
+print("Reading data from SQLite...", flush=True)
+conn = sqlite3.connect('reputation.db')
+df = pd.read_sql_query("SELECT * FROM businesses", conn)
+conn.close()
+print(f"Read data with shape {df.shape}", flush=True)
 
 # 2. Preprocessing
 # Features: monthly_revenue, payment_delays, transactions, avg_sentiment

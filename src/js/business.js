@@ -61,15 +61,13 @@ export function renderBusiness() {
   `;
 }
 
-function showResult(data) {
+function showResult(result, inputData) {
   const el = document.getElementById('analysisResult');
   if (!el) return;
 
-  const score = Math.min(100, Math.max(0,
-    Math.round((data.revenue / 1000) * 0.3 + (data.transactions / 50) * 0.2 + (30 - data.paymentDelay) * 1.5 + data.activityFreq * 0.8 + 35)
-  ));
-  const grade = score >= 85 ? 'A' : score >= 70 ? 'B' : score >= 55 ? 'C' : 'D';
-  const risk = score >= 75 ? 'Low' : score >= 50 ? 'Moderate' : 'High';
+  const score = result.score;
+  const grade = result.grade;
+  const risk = result.risk;
   const riskCls = risk === 'Low' ? 'success' : risk === 'Moderate' ? 'warning' : 'danger';
 
   el.innerHTML = `
@@ -87,15 +85,15 @@ function showResult(data) {
       <div style="text-align: left;">
         <div class="explanation-card positive animated">
           <div class="explanation-icon positive">✓</div>
-          <div class="explanation-text"><strong>Monthly revenue of $${data.revenue.toLocaleString()}</strong> reflects stable income.</div>
+          <div class="explanation-text"><strong>Monthly revenue of $${inputData.revenue.toLocaleString()}</strong> reflects stable income.</div>
         </div>
-        <div class="explanation-card ${data.paymentDelay > 10 ? 'negative' : 'positive'} animated" style="animation-delay: 80ms;">
-          <div class="explanation-icon ${data.paymentDelay > 10 ? 'negative' : 'positive'}">${data.paymentDelay > 10 ? '✕' : '✓'}</div>
-          <div class="explanation-text"><strong>Payment delay of ${data.paymentDelay} days</strong> ${data.paymentDelay > 10 ? 'indicates concerns.' : 'is within healthy range.'}</div>
+        <div class="explanation-card ${inputData.paymentDelay > 10 ? 'negative' : 'positive'} animated" style="animation-delay: 80ms;">
+          <div class="explanation-icon ${inputData.paymentDelay > 10 ? 'negative' : 'positive'}">${inputData.paymentDelay > 10 ? '✕' : '✓'}</div>
+          <div class="explanation-text"><strong>Payment delay of ${inputData.paymentDelay} days</strong> ${inputData.paymentDelay > 10 ? 'indicates concerns.' : 'is within healthy range.'}</div>
         </div>
         <div class="explanation-card positive animated" style="animation-delay: 160ms;">
           <div class="explanation-icon positive">✓</div>
-          <div class="explanation-text"><strong>${data.transactions} transactions</strong> demonstrate consistent activity.</div>
+          <div class="explanation-text"><strong>${inputData.transactions} transactions</strong> demonstrate consistent activity.</div>
         </div>
       </div>
     </div>
@@ -113,10 +111,31 @@ export function initBusiness() {
     const data = {
       revenue: parseFloat(document.getElementById('revenue').value) || 0,
       transactions: parseInt(document.getElementById('transactions').value, 10) || 0,
-      reviewText: document.getElementById('reviewText').value,
+      // reviewText is not used in backend yet, but we can pass sentiment if we had it
       paymentDelay: parseFloat(document.getElementById('paymentDelay').value) || 0,
       activityFreq: parseInt(document.getElementById('activityFreq').value, 10) || 0,
     };
-    setTimeout(() => { btn.classList.remove('btn-loading'); showResult(data); }, 1200);
+
+    fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+      .then(response => response.json())
+      .then(result => {
+        btn.classList.remove('btn-loading');
+        // Merge input data with result for display (result has 'score', 'grade', 'risk', etc.)
+        // The showResult function expects the original input data for explanation text
+        // We can enhance showResult to use the backend result if needed, but for now passing 'data' works for explanations
+        // AND we inject the calculated score/grade/risk into the 'data' object or modify showResult to accept 'result'
+
+        // Adaptation: modify showResult to take 'result' (from backend) AND 'data' (input)
+        showResult(result, data);
+      })
+      .catch(err => {
+        console.error(err);
+        btn.classList.remove('btn-loading');
+        alert('Analysis failed. See console.');
+      });
   });
 }

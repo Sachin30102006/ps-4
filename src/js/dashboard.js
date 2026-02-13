@@ -4,77 +4,107 @@
 import { createSparkline, createBarChart, COLORS } from './charts.js';
 
 function animateNumber(el, target, duration = 1000) {
-    let start = 0;
-    const startTime = performance.now();
-    const step = (now) => {
-        const p = Math.min((now - startTime) / duration, 1);
-        const eased = 1 - Math.pow(1 - p, 3);
-        el.textContent = Math.round(start + (target - start) * eased);
-        if (p < 1) requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
+  let start = 0;
+  const startTime = performance.now();
+  const step = (now) => {
+    const p = Math.min((now - startTime) / duration, 1);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(start + (target - start) * eased);
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
-const SCORE = { value: 78, grade: 'B+', risk: 'Low' };
+let SCORE = { value: 0, grade: '-', risk: '-' };
+let METRIC_CARDS = [];
+let TABLE_DATA = [];
 
-const METRIC_CARDS = [
-    {
-        name: 'Financial Stability',
-        score: 82,
-        icon: '📊',
-        sparkData: [65, 70, 68, 74, 78, 80, 82],
-        trend: '+3.2%',
-        trendDir: 'up',
-        stats: [
+// Helper to calculate score (simulated for now based on raw data if not stored, 
+// but ideally we'd store the score. For now, we'll re-calculate approx score for display or fetch if stored)
+// Since we don't store the exact score in DB (only raw metrics + risk_label), 
+// we will re-calculate the score on the client side for the latest record or fetch it if we updated the DB schema.
+// Just re-calculating using the same formula as business.js/risk_engine.py for consistency.
+function calculateScore(data) {
+  return Math.min(100, Math.max(0,
+    Math.round((data.monthly_revenue / 1000) * 0.3 + (data.transactions / 50) * 0.2 + (30 - data.payment_delays) * 1.5 + 35)
+  ));
+}
+
+async function fetchData() {
+  try {
+    const res = await fetch('/api/businesses');
+    const data = await res.json();
+
+    if (data && data.length > 0) {
+      // Use the *latest* record
+      const latest = data[data.length - 1];
+      const scoreVal = calculateScore(latest);
+
+      SCORE = {
+        value: scoreVal,
+        grade: scoreVal >= 85 ? 'A' : scoreVal >= 70 ? 'B' : scoreVal >= 55 ? 'C' : 'D',
+        risk: latest.risk_label === 1 ? 'High' : (scoreVal >= 75 ? 'Low' : 'Moderate')
+      };
+
+      METRIC_CARDS = [
+        {
+          name: 'Financial Stability',
+          score: Math.min(100, Math.round((latest.monthly_revenue / 1000) * 0.8 + 20)),
+          icon: '📊',
+          sparkData: [65, 70, 68, 74, 78, 80, 82], // Simulated history
+          trend: '+3.2%',
+          trendDir: 'up',
+          stats: [
             { icon: '📈', label: '+3.2%' },
-            { icon: '💰', label: '$45K' },
-        ],
-    },
-    {
-        name: 'Sentiment Score',
-        score: 74,
-        icon: '💬',
-        sparkData: [80, 78, 76, 73, 75, 72, 74],
-        trend: '-1.8%',
-        trendDir: 'down',
-        stats: [
+            { icon: '💰', label: `$${(latest.monthly_revenue / 1000).toFixed(1)}K` },
+          ],
+        },
+        {
+          name: 'Sentiment Score',
+          score: Math.min(100, Math.round((latest.avg_sentiment * 50) + 50)), // Map -1..1 to 0..100
+          icon: '💬',
+          sparkData: [80, 78, 76, 73, 75, 72, 74],
+          trend: '-1.8%',
+          trendDir: 'down',
+          stats: [
             { icon: '⭐', label: '3.8/5' },
             { icon: '📝', label: '1.2K' },
-        ],
-    },
-    {
-        name: 'Behavioral Score',
-        score: 88,
-        icon: '🔄',
-        sparkData: [70, 74, 78, 82, 84, 86, 88],
-        trend: '+5.1%',
-        trendDir: 'up',
-        stats: [
+          ],
+        },
+        {
+          name: 'Behavioral Score',
+          score: Math.min(100, Math.max(0, 100 - (latest.payment_delays * 2))),
+          icon: '🔄',
+          sparkData: [70, 74, 78, 82, 84, 86, 88],
+          trend: '+5.1%',
+          trendDir: 'up',
+          stats: [
             { icon: '✅', label: '+5.1%' },
-            { icon: '🔁', label: '22/mo' },
-        ],
-    },
-];
+            { icon: '🔁', label: `${latest.transactions}/mo` },
+          ],
+        },
+      ];
 
-const MONTHLY_DATA = {
-    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May'],
-    study: [40, 55, 35, 60, 50],
-    review: [20, 30, 25, 35, 28],
-};
+      TABLE_DATA = [
+        { rank: 1, name: 'Financial Stability', category: 'Finance', weight: 40, score: METRIC_CARDS[0].score, color: '#00E88F' },
+        { rank: 2, name: 'Sentiment Analysis', category: 'NLP', weight: 30, score: METRIC_CARDS[1].score, color: '#A78BFA' },
+        { rank: 3, name: 'Behavioral Consistency', category: 'Behavior', weight: 20, score: METRIC_CARDS[2].score, color: '#2DD4BF' },
+        { rank: 4, name: 'Activity Reliability', category: 'Activity', weight: 10, score: 69, color: '#F5A623' },
+      ];
+    }
+  } catch (e) {
+    console.error("Failed to fetch dashboard data", e);
+  }
+}
 
-const TABLE_DATA = [
-    { rank: 1, name: 'Financial Stability', category: 'Finance', weight: 40, score: 82, color: '#00E88F' },
-    { rank: 2, name: 'Sentiment Analysis', category: 'NLP', weight: 30, score: 74, color: '#A78BFA' },
-    { rank: 3, name: 'Behavioral Consistency', category: 'Behavior', weight: 20, score: 88, color: '#2DD4BF' },
-    { rank: 4, name: 'Activity Reliability', category: 'Activity', weight: 10, score: 69, color: '#F5A623' },
-];
+export async function renderDashboard() {
+  await fetchData();
 
-export function renderDashboard() {
-    const circumference = 2 * Math.PI * 70;
-    const offset = circumference - (SCORE.value / 100) * circumference;
-    const riskClass = SCORE.risk === 'Low' ? 'success' : SCORE.risk === 'Moderate' ? 'warning' : 'danger';
+  const circumference = 2 * Math.PI * 70;
+  const offset = circumference - (SCORE.value / 100) * circumference;
+  const riskClass = SCORE.risk === 'Low' ? 'success' : SCORE.risk === 'Moderate' ? 'warning' : 'danger';
 
-    return `
+  return `
     <div class="page-enter">
       <!-- Greeting Bar -->
       <div class="greeting-bar">
@@ -200,44 +230,44 @@ export function renderDashboard() {
 }
 
 export function initDashboard() {
-    // Animate score
-    const scoreEl = document.querySelector('.score-number');
-    if (scoreEl) animateNumber(scoreEl, parseInt(scoreEl.dataset.target, 10));
+  // Animate score
+  const scoreEl = document.querySelector('.score-number');
+  if (scoreEl) animateNumber(scoreEl, parseInt(scoreEl.dataset.target, 10));
 
-    // Animate ring
-    const ring = document.querySelector('.score-meter-fill');
-    if (ring) requestAnimationFrame(() => { ring.style.strokeDashoffset = ring.dataset.targetOffset; });
+  // Animate ring
+  const ring = document.querySelector('.score-meter-fill');
+  if (ring) requestAnimationFrame(() => { ring.style.strokeDashoffset = ring.dataset.targetOffset; });
 
-    // Bar chart
-    const breakdownCanvas = document.getElementById('breakdownChart');
-    if (breakdownCanvas) {
-        createBarChart(breakdownCanvas, {
-            labels: ['Financial', 'Sentiment', 'Behavior', 'Activity'],
-            datasets: [
-                { label: 'Score', data: [82, 74, 88, 69], color: COLORS.accent, barThickness: 16 },
-                { label: 'Weight', data: [40, 30, 20, 10], color: COLORS.teal, barThickness: 16 },
-            ],
-        });
-    }
+  // Bar chart
+  const breakdownCanvas = document.getElementById('breakdownChart');
+  if (breakdownCanvas && METRIC_CARDS.length > 0) {
+    createBarChart(breakdownCanvas, {
+      labels: ['Financial', 'Sentiment', 'Behavior', 'Activity'],
+      datasets: [
+        { label: 'Score', data: [METRIC_CARDS[0].score, METRIC_CARDS[1].score, METRIC_CARDS[2].score, 69], color: COLORS.accent, barThickness: 16 },
+        { label: 'Weight', data: [40, 30, 20, 10], color: COLORS.teal, barThickness: 16 },
+      ],
+    });
+  }
 }
 
 /* ── Right Panel ── */
 export function renderDashboardPanel() {
-    const today = new Date();
-    const monthName = today.toLocaleString('default', { month: 'long' });
-    const year = today.getFullYear();
-    const daysInMonth = new Date(year, today.getMonth() + 1, 0).getDate();
-    const firstDay = new Date(year, today.getMonth(), 1).getDay();
+  const today = new Date();
+  const monthName = today.toLocaleString('default', { month: 'long' });
+  const year = today.getFullYear();
+  const daysInMonth = new Date(year, today.getMonth() + 1, 0).getDate();
+  const firstDay = new Date(year, today.getMonth(), 1).getDay();
 
-    let calDays = '';
-    for (let i = 0; i < firstDay; i++) calDays += '<span class="day"></span>';
-    for (let d = 1; d <= daysInMonth; d++) {
-        const isToday = d === today.getDate();
-        const hasEvent = [5, 12, 18, 25].includes(d);
-        calDays += `<span class="day${isToday ? ' today' : ''}${hasEvent ? ' has-event' : ''}">${d}</span>`;
-    }
+  let calDays = '';
+  for (let i = 0; i < firstDay; i++) calDays += '<span class="day"></span>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isToday = d === today.getDate();
+    const hasEvent = [5, 12, 18, 25].includes(d);
+    calDays += `<span class="day${isToday ? ' today' : ''}${hasEvent ? ' has-event' : ''}">${d}</span>`;
+  }
 
-    return `
+  return `
     <!-- Profile -->
     <div class="profile-card">
       <div style="display: flex; justify-content: flex-end; margin-bottom: var(--space-2);">

@@ -1,0 +1,30 @@
+/* ═══════════════════════════════════════════
+   Chart-specific Styles
+   ═══════════════════════════════════════════ */
+
+.chart-wrapper {
+    position: relative;
+    padding: var(--space-2);
+}
+
+.chart-legend {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    margin-top: var(--space-4);
+}
+
+.chart-legend-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+.chart-legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+}
